@@ -258,7 +258,13 @@
         }
 
         video, canvas {
-            display: none;
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 160px;
+            height: auto;
+            z-index: 100;
+            background: #000;
         }
     </style>
 </head>
@@ -266,7 +272,7 @@
     <button id="ar-button">Start AR Session</button>
     <div id="notification">Waiting to start...</div>
 
-    <video id="camera-video" autoplay playsinline></video>
+    <video id="camera-video" autoplay muted playsinline></video>
     <canvas id="capture-canvas"></canvas>
 
     <script type="module">
@@ -282,13 +288,32 @@
             console.log(msg);
         }
 
+        async function waitForVideoDimensions() {
+            return new Promise((resolve) => {
+                const check = () => {
+                    if (video.videoWidth > 0 && video.videoHeight > 0) {
+                        resolve();
+                    } else {
+                        requestAnimationFrame(check);
+                    }
+                };
+                check();
+            });
+        }
+
         async function startCamera() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' }
+                });
                 video.srcObject = stream;
                 await video.play();
+                await waitForVideoDimensions();
 
-                showNotification('Camera stream started');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+
+                showNotification(`Camera stream started (${video.videoWidth}x${video.videoHeight})`);
             } catch (e) {
                 showNotification('Camera error: ' + e.message, true);
                 throw e;
@@ -296,21 +321,19 @@
         }
 
         function captureFrame() {
-            // Set canvas size to video frame size
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-
-            // Draw the current video frame into the canvas
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            // Convert canvas to Blob (JPEG)
             return new Promise((resolve) => {
                 canvas.toBlob(blob => {
                     if (!blob) {
                         showNotification('Failed to capture frame as blob', true);
                         return;
                     }
-                    resolve({ blob, width: canvas.width, height: canvas.height });
+                    resolve({
+                        blob,
+                        width: canvas.width,
+                        height: canvas.height
+                    });
                 }, 'image/jpeg', 0.9);
             });
         }
@@ -318,15 +341,12 @@
         async function sendLocalizationRequest(imageData) {
             showNotification('Sending localization request...');
 
-            // Replace these with your actual credentials & mapId
             const client_id = 'f67b6749-bf5b-42b5-b8a2-5ec3836503d4';
             const client_secret = '3fd6c23ddcdcd6d58f3db3e3688c55a2fb587439a3f1d9f66ae90eb85a9df3a9';
             const mapId = 'MAP_WNXIFBW3VGZD';
 
             const formData = new FormData();
-            // Camera intrinsics - if you have known/fixed values, you can hardcode here or get from XR API
-            // For demo, set to some default values or calculate if possible
-            formData.append('fx', '1000'); // Example focal length in pixels
+            formData.append('fx', '1000');
             formData.append('fy', '1000');
             formData.append('px', (imageData.width / 2).toString());
             formData.append('py', (imageData.height / 2).toString());
@@ -352,7 +372,6 @@
                 }
 
                 const data = await response.json();
-
                 showNotification('Localization success!\n' + JSON.stringify(data, null, 2));
                 console.log('Localization data:', data);
             } catch (e) {
@@ -364,8 +383,6 @@
             showNotification('Starting camera...');
             await startCamera();
 
-            // Periodically capture frame and send localization
-            // You can adjust interval as needed
             setInterval(async () => {
                 try {
                     const imageData = await captureFrame();
@@ -373,7 +390,7 @@
                 } catch (e) {
                     console.error('Capture or localization error:', e);
                 }
-            }, 5000); // every 5 seconds
+            }, 5000);
 
             button.style.display = 'none';
         });
